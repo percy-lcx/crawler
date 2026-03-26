@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import time
+from pathlib import Path
 from typing import Self
 
-from playwright.async_api import async_playwright, Browser, Playwright
+from playwright.async_api import async_playwright, Browser, Page, Playwright
 
 from .constants import (
     DEFAULT_TIMEOUT_MS,
-    FONT_EXTENSIONS,
     MOBILE_GOOGLEBOT_UA,
     SETTLE_SECONDS,
     VIEWPORT_HEIGHT,
@@ -21,8 +23,13 @@ from .models import RenderResult
 class HeadlessRenderer:
     """Manages a Playwright browser instance for rendering URLs."""
 
-    def __init__(self, settle_seconds: float = SETTLE_SECONDS) -> None:
+    def __init__(
+        self,
+        settle_seconds: float = SETTLE_SECONDS,
+        screenshot_dir: str | None = None,
+    ) -> None:
         self._settle_seconds = settle_seconds
+        self._screenshot_dir = screenshot_dir
         self._playwright: Playwright | None = None
         self._browser: Browser | None = None
 
@@ -54,11 +61,14 @@ class HeadlessRenderer:
         try:
             page = await context.new_page()
 
-            # Block font requests
-            await page.route(
-                _font_pattern(),
-                lambda route: route.abort(),
-            )
+            # Block font requests to match Googlebot behavior
+            async def _handle_route(route):
+                if route.request.resource_type == "font":
+                    await route.abort()
+                else:
+                    await route.continue_()
+
+            await page.route("**/*", _handle_route)
 
             # Capture console errors
             page.on(
@@ -84,7 +94,6 @@ class HeadlessRenderer:
                 )
             except Exception as exc:
                 elapsed_ms = (time.monotonic() - start) * 1000
-                # Still try to capture whatever loaded
                 try:
                     rendered_html = await page.content()
                 except Exception:
@@ -105,6 +114,11 @@ class HeadlessRenderer:
             rendered_html = await page.content()
             elapsed_ms = (time.monotonic() - start) * 1000
 
+            # Screenshot capture (non-blocking with timeout)
+            screenshot_path = None
+            if self._screenshot_dir:
+                screenshot_path = await self._take_screenshot(page, url)
+
             return RenderResult(
                 url=url,
                 rendered_html=rendered_html,
@@ -112,6 +126,7 @@ class HeadlessRenderer:
                 console_errors=console_errors,
                 failed_requests=failed_requests,
                 render_time_ms=elapsed_ms,
+                screenshot_path=screenshot_path,
             )
         except Exception as exc:
             elapsed_ms = (time.monotonic() - start) * 1000
@@ -123,7 +138,39 @@ class HeadlessRenderer:
         finally:
             await context.close()
 
+    async def _take_screenshot(self, page: Page, url: str) -> str | None:
+        """Capture a screenshot via CDP (bypasses Playwright's font-waiting)."""
+        try:
+            import base64
 
-def _font_pattern() -> str:
-    exts = "|".join(FONT_EXTENSIONS)
-    return f"**/*.{{{exts}}}"
+            slug = hashlib.md5(url.encode()).hexdigest()[:12]
+            dir_path = Path(self._screenshot_dir)
+            dir_path.mkdir(parents=True, exist_ok=True)
+            path = dir_path / f"{slug}.png"
+
+            # Use CDP captureScreenshot which doesn't wait for fonts
+            cdp = await page.context.new_cdp_session(page)
+            try:
+                result = await asyncio.wait_for(
+                    cdp.send(
+                        "Page.captureScreenshot",
+                        {
+                            "format": "png",
+                            "clip": {
+                                "x": 0,
+                                "y": 0,
+                                "width": VIEWPORT_WIDTH,
+                                "height": VIEWPORT_HEIGHT,
+                                "scale": 1,
+                            },
+                        },
+                    ),
+                    timeout=10.0,
+                )
+                data = base64.b64decode(result["data"])
+                path.write_bytes(data)
+                return str(path)
+            finally:
+                await cdp.detach()
+        except Exception:
+            return None

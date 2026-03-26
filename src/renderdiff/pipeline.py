@@ -112,6 +112,7 @@ async def run(
     urls: list[str],
     concurrency: int = DEFAULT_CONCURRENCY,
     delay: float = DEFAULT_DELAY_S,
+    screenshot_dir: str | None = None,
 ) -> RunReport:
     """Process all URLs with bounded concurrency."""
     run_id = uuid.uuid4().hex[:12]
@@ -120,7 +121,7 @@ async def run(
     semaphore = asyncio.Semaphore(concurrency)
 
     client = create_client()
-    async with client, HeadlessRenderer() as renderer:
+    async with client, HeadlessRenderer(screenshot_dir=screenshot_dir) as renderer:
         tasks = [
             process_url(url, client, renderer, semaphore, delay) for url in urls
         ]

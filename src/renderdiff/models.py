@@ -45,6 +45,7 @@ class RenderResult(BaseModel):
     console_errors: list[str] = Field(default_factory=list)
     failed_requests: list[str] = Field(default_factory=list)
     render_time_ms: float = 0.0
+    screenshot_path: str | None = None
     error: str | None = None
 
 

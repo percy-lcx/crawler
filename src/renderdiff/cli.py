@@ -10,7 +10,7 @@ import typer
 
 from .input import resolve_urls
 from .pipeline import run
-from .reporter import print_cli_summary, write_json_report
+from .reporter import print_cli_summary, write_html_report, write_json_report
 
 app = typer.Typer(
     name="renderdiff",
@@ -40,6 +40,9 @@ def scan(
     limit: Optional[int] = typer.Option(
         None, "--limit", "-l", help="Max number of URLs to process"
     ),
+    html_report: Optional[str] = typer.Option(
+        None, "--html", help="Path to write visual HTML report with screenshots"
+    ),
 ) -> None:
     """Scan URLs and compare raw HTML vs rendered DOM."""
     if not url and not input_file and not sitemap:
@@ -56,6 +59,7 @@ def scan(
                 concurrency=concurrency,
                 output=output,
                 limit=limit,
+                html_report=html_report,
             )
         )
     except KeyboardInterrupt:
@@ -71,6 +75,7 @@ async def _scan_async(
     concurrency: int,
     output: str | None,
     limit: int | None,
+    html_report: str | None,
 ) -> None:
     urls = await resolve_urls(
         url=url,
@@ -85,13 +90,29 @@ async def _scan_async(
 
     typer.echo(f"Processing {len(urls)} URL(s) (concurrency={concurrency}, delay={delay}s)...\n")
 
-    report = await run(urls, concurrency=concurrency, delay=delay)
+    # Enable screenshots when HTML report is requested
+    screenshot_dir = None
+    if html_report:
+        from pathlib import Path
+
+        screenshot_dir = str(Path(html_report).parent / ".renderdiff-screenshots")
+
+    report = await run(
+        urls,
+        concurrency=concurrency,
+        delay=delay,
+        screenshot_dir=screenshot_dir,
+    )
 
     print_cli_summary(report)
 
     if output:
         write_json_report(report, output)
         typer.echo(f"JSON report written to {output}")
+
+    if html_report:
+        write_html_report(report, html_report)
+        typer.echo(f"HTML report written to {html_report}")
 
     # Exit code based on severity
     if report.failed > 0:
