@@ -20,6 +20,20 @@ app = typer.Typer(
 
 
 @app.command()
+def serve(
+    host: str = typer.Option("127.0.0.1", help="Bind address"),
+    port: int = typer.Option(8000, help="Port number"),
+) -> None:
+    """Launch the web UI."""
+    import uvicorn
+
+    from .web.app import create_app
+
+    typer.echo(f"Starting renderdiff web UI at http://{host}:{port}")
+    uvicorn.run(create_app(), host=host, port=port)
+
+
+@app.command()
 def scan(
     url: Optional[str] = typer.Argument(None, help="Single URL to scan"),
     input_file: Optional[str] = typer.Option(
