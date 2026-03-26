@@ -368,6 +368,14 @@ function createUrlCard(r) {
   const body = document.createElement('div');
   body.className = 'url-body';
 
+  // Show render error if present
+  if (r.render && r.render.error) {
+    const warn = document.createElement('div');
+    warn.className = 'skip-reason';
+    warn.textContent = 'Render warning: ' + r.render.error;
+    body.appendChild(warn);
+  }
+
   if (r.skipped) {
     body.innerHTML = `<div class="skip-reason">Skipped: ${escapeHtml(r.skip_reason || 'unknown')}</div>`;
   } else if (!r.diffs || r.diffs.length === 0) {
