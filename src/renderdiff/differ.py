@@ -38,45 +38,99 @@ def diff_signals(
     # Structured data
     _diff_structured_data(diffs, raw, rendered)
 
-    # Internal links count
-    _diff_count(
-        diffs,
-        "internal_links",
-        len(raw.internal_links),
-        len(rendered.internal_links),
-        LINK_COUNT_THRESHOLD_PCT,
-        Severity.WARNING,
-    )
+    # Internal links — itemized diff
+    raw_link_hrefs = {li.href for li in raw.internal_links}
+    rendered_link_hrefs = {li.href for li in rendered.internal_links}
+    if raw_link_hrefs != rendered_link_hrefs:
+        only_in_raw_links = sorted(raw_link_hrefs - rendered_link_hrefs)
+        only_in_rendered_links = sorted(rendered_link_hrefs - raw_link_hrefs)
+        raw_count = len(raw.internal_links)
+        rendered_count = len(rendered.internal_links)
+        pct = _pct_change(raw_count, rendered_count)
 
-    # Images count
-    raw_img_count = len(raw.images)
-    rendered_img_count = len(rendered.images)
-    if rendered_img_count > raw_img_count:
+        link_details: dict[str, list[str]] = {}
+        if only_in_rendered_links:
+            link_details["only_in_rendered"] = only_in_rendered_links
+        if only_in_raw_links:
+            link_details["only_in_raw"] = only_in_raw_links
+
+        if pct > LINK_COUNT_THRESHOLD_PCT or link_details:
+            diffs.append(
+                SignalDiff(
+                    field="internal_links",
+                    severity=Severity.WARNING,
+                    raw_value=raw_count,
+                    rendered_value=rendered_count,
+                    message=(
+                        f"internal_links: count differs by {pct:.0f}% "
+                        f"(raw={raw_count}, rendered={rendered_count})"
+                    ),
+                    details=link_details if link_details else None,
+                )
+            )
+
+    # Images — itemized diff
+    raw_img_srcs = {img.src for img in raw.images}
+    rendered_img_srcs = {img.src for img in rendered.images}
+    if raw_img_srcs != rendered_img_srcs:
+        only_in_raw_imgs = sorted(raw_img_srcs - rendered_img_srcs)
+        only_in_rendered_imgs = sorted(rendered_img_srcs - raw_img_srcs)
+        raw_img_count = len(raw.images)
+        rendered_img_count = len(rendered.images)
+
+        img_details: dict[str, list[str]] = {}
+        if only_in_rendered_imgs:
+            img_details["only_in_rendered"] = only_in_rendered_imgs
+        if only_in_raw_imgs:
+            img_details["only_in_raw"] = only_in_raw_imgs
+
+        if rendered_img_count > raw_img_count:
+            img_msg = (
+                f"Rendered has {rendered_img_count - raw_img_count} more images "
+                f"than raw ({raw_img_count} vs {rendered_img_count}) — "
+                f"likely lazy-loaded"
+            )
+        else:
+            img_msg = (
+                f"Image sources differ (raw={raw_img_count}, rendered={rendered_img_count})"
+            )
+
         diffs.append(
             SignalDiff(
                 field="images",
                 severity=Severity.WARNING,
                 raw_value=raw_img_count,
                 rendered_value=rendered_img_count,
-                message=(
-                    f"Rendered has {rendered_img_count - raw_img_count} more images "
-                    f"than raw ({raw_img_count} vs {rendered_img_count}) — "
-                    f"likely lazy-loaded"
-                ),
+                message=img_msg,
+                details=img_details if img_details else None,
             )
         )
 
-    # Hreflang
-    raw_langs = {e.lang for e in raw.hreflang}
-    rendered_langs = {e.lang for e in rendered.hreflang}
-    if raw_langs != rendered_langs:
+    # Hreflang — itemized diff
+    raw_hreflang_set = {(e.lang, e.href) for e in raw.hreflang}
+    rendered_hreflang_set = {(e.lang, e.href) for e in rendered.hreflang}
+    if raw_hreflang_set != rendered_hreflang_set:
+        only_in_raw_hl = sorted(
+            f"{lang}: {href}" for lang, href in (raw_hreflang_set - rendered_hreflang_set)
+        )
+        only_in_rendered_hl = sorted(
+            f"{lang}: {href}" for lang, href in (rendered_hreflang_set - raw_hreflang_set)
+        )
+
+        hl_details: dict[str, list[str]] = {}
+        if only_in_rendered_hl:
+            hl_details["only_in_rendered"] = only_in_rendered_hl
+        if only_in_raw_hl:
+            hl_details["only_in_raw"] = only_in_raw_hl
+
         diffs.append(
             SignalDiff(
                 field="hreflang",
                 severity=Severity.WARNING,
-                raw_value=sorted(raw_langs),
-                rendered_value=sorted(rendered_langs),
-                message="Hreflang languages differ between raw and rendered",
+                raw_value=sorted(e.lang for e in raw.hreflang),
+                rendered_value=sorted(e.lang for e in rendered.hreflang),
+                message="Hreflang entries differ between raw and rendered",
+                details=hl_details if hl_details else None,
             )
         )
 
@@ -159,13 +213,32 @@ def _diff_list(
     severity: Severity,
 ) -> None:
     if raw_val != rendered_val:
+        raw_set = set(raw_val)
+        rendered_set = set(rendered_val)
+        only_in_raw = sorted(raw_set - rendered_set)
+        only_in_rendered = sorted(rendered_set - raw_set)
+
+        parts: list[str] = []
+        if only_in_rendered:
+            parts.append(f"{len(only_in_rendered)} only in rendered")
+        if only_in_raw:
+            parts.append(f"{len(only_in_raw)} only in raw")
+        msg = f"{field}: content differs — {', '.join(parts)}" if parts else f"{field}: ordering differs"
+
+        details: dict[str, list[str]] = {}
+        if only_in_rendered:
+            details["only_in_rendered"] = only_in_rendered
+        if only_in_raw:
+            details["only_in_raw"] = only_in_raw
+
         diffs.append(
             SignalDiff(
                 field=field,
                 severity=severity,
                 raw_value=raw_val,
                 rendered_value=rendered_val,
-                message=f"{field}: content differs between raw and rendered",
+                message=msg,
+                details=details if details else None,
             )
         )
 

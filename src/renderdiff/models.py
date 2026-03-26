@@ -98,6 +98,7 @@ class SignalDiff(BaseModel):
     raw_value: Any = None
     rendered_value: Any = None
     message: str
+    details: dict[str, list[str]] | None = None
 
 
 class UrlReport(BaseModel):

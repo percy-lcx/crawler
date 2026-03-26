@@ -4,7 +4,9 @@ from renderdiff.differ import diff_signals
 from renderdiff.extractor import extract_signals
 from renderdiff.models import (
     FetchResult,
+    HreflangEntry,
     ImageInfo,
+    LinkInfo,
     SeoSignals,
     Severity,
     StructuredDataItem,
@@ -62,6 +64,9 @@ def test_h1_diff_is_warning():
     h1_diffs = [d for d in diffs if d.field == "h1_texts"]
     assert len(h1_diffs) == 1
     assert h1_diffs[0].severity == Severity.WARNING
+    assert h1_diffs[0].details is not None
+    assert "Hello" in h1_diffs[0].details["only_in_raw"]
+    assert "Hello World" in h1_diffs[0].details["only_in_rendered"]
 
 
 def test_h2_diff_is_info():
@@ -71,6 +76,9 @@ def test_h2_diff_is_info():
     h2_diffs = [d for d in diffs if d.field == "h2_texts"]
     assert len(h2_diffs) == 1
     assert h2_diffs[0].severity == Severity.INFO
+    assert h2_diffs[0].details is not None
+    assert "B" in h2_diffs[0].details["only_in_rendered"]
+    assert "only_in_raw" not in h2_diffs[0].details
 
 
 def test_structured_data_diff_is_critical():
@@ -126,6 +134,10 @@ def test_images_lazy_loaded():
     img_diffs = [d for d in diffs if d.field == "images"]
     assert len(img_diffs) == 1
     assert "lazy-loaded" in img_diffs[0].message
+    assert img_diffs[0].details is not None
+    assert "/b.jpg" in img_diffs[0].details["only_in_rendered"]
+    assert "/c.jpg" in img_diffs[0].details["only_in_rendered"]
+    assert "only_in_raw" not in img_diffs[0].details
 
 
 def test_js_dependent_title():
@@ -135,6 +147,73 @@ def test_js_dependent_title():
     title_diffs = [d for d in diffs if d.field == "title"]
     assert len(title_diffs) == 1
     assert "JS-dependent" in title_diffs[0].message
+
+
+def test_internal_links_itemized():
+    """Internal links diff shows specific hrefs that differ."""
+    raw = SeoSignals(
+        internal_links=[
+            LinkInfo(href="/about", text="About", is_internal=True),
+            LinkInfo(href="/contact", text="Contact", is_internal=True),
+        ]
+    )
+    rendered = SeoSignals(
+        internal_links=[
+            LinkInfo(href="/about", text="About", is_internal=True),
+            LinkInfo(href="/products", text="Products", is_internal=True),
+            LinkInfo(href="/blog", text="Blog", is_internal=True),
+        ]
+    )
+    diffs = diff_signals(raw, rendered, _make_fetch())
+    link_diffs = [d for d in diffs if d.field == "internal_links"]
+    assert len(link_diffs) == 1
+    assert link_diffs[0].details is not None
+    assert "/contact" in link_diffs[0].details["only_in_raw"]
+    assert "/products" in link_diffs[0].details["only_in_rendered"]
+    assert "/blog" in link_diffs[0].details["only_in_rendered"]
+
+
+def test_hreflang_itemized():
+    """Hreflang diff shows specific entries that differ."""
+    raw = SeoSignals(
+        hreflang=[
+            HreflangEntry(lang="en", href="https://example.com/en"),
+            HreflangEntry(lang="fr", href="https://example.com/fr"),
+        ]
+    )
+    rendered = SeoSignals(
+        hreflang=[
+            HreflangEntry(lang="en", href="https://example.com/en"),
+            HreflangEntry(lang="de", href="https://example.com/de"),
+        ]
+    )
+    diffs = diff_signals(raw, rendered, _make_fetch())
+    hreflang_diffs = [d for d in diffs if d.field == "hreflang"]
+    assert len(hreflang_diffs) == 1
+    assert hreflang_diffs[0].details is not None
+    assert any("fr" in item for item in hreflang_diffs[0].details["only_in_raw"])
+    assert any("de" in item for item in hreflang_diffs[0].details["only_in_rendered"])
+
+
+def test_images_same_count_different_srcs():
+    """Images diff fires even when counts match but sources differ."""
+    raw = SeoSignals(images=[ImageInfo(src="/a.jpg"), ImageInfo(src="/b.jpg")])
+    rendered = SeoSignals(images=[ImageInfo(src="/a.jpg"), ImageInfo(src="/c.jpg")])
+    diffs = diff_signals(raw, rendered, _make_fetch())
+    img_diffs = [d for d in diffs if d.field == "images"]
+    assert len(img_diffs) == 1
+    assert img_diffs[0].details is not None
+    assert "/b.jpg" in img_diffs[0].details["only_in_raw"]
+    assert "/c.jpg" in img_diffs[0].details["only_in_rendered"]
+
+
+def test_identical_lists_no_details():
+    """When h1_texts are identical, no diff is produced."""
+    raw = SeoSignals(h1_texts=["Hello"])
+    rendered = SeoSignals(h1_texts=["Hello"])
+    diffs = diff_signals(raw, rendered, _make_fetch())
+    h1_diffs = [d for d in diffs if d.field == "h1_texts"]
+    assert len(h1_diffs) == 0
 
 
 def test_full_sample_diff():
