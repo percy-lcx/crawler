@@ -139,16 +139,16 @@ class HeadlessRenderer:
             await context.close()
 
     async def _take_screenshot(self, page: Page, url: str) -> str | None:
-        """Capture a screenshot via CDP (bypasses Playwright's font-waiting)."""
+        """Capture a screenshot, trying CDP first then falling back to Playwright."""
+        import base64
+
+        slug = hashlib.md5(url.encode()).hexdigest()[:12]
+        dir_path = Path(self._screenshot_dir)
+        dir_path.mkdir(parents=True, exist_ok=True)
+        path = dir_path / f"{slug}.png"
+
+        # Try CDP first (faster, doesn't wait for fonts)
         try:
-            import base64
-
-            slug = hashlib.md5(url.encode()).hexdigest()[:12]
-            dir_path = Path(self._screenshot_dir)
-            dir_path.mkdir(parents=True, exist_ok=True)
-            path = dir_path / f"{slug}.png"
-
-            # Use CDP captureScreenshot which doesn't wait for fonts
             cdp = await page.context.new_cdp_session(page)
             try:
                 result = await asyncio.wait_for(
@@ -172,5 +172,12 @@ class HeadlessRenderer:
                 return str(path)
             finally:
                 await cdp.detach()
+        except Exception:
+            pass  # Fall through to Playwright fallback
+
+        # Fallback: Playwright's built-in screenshot
+        try:
+            await page.screenshot(path=str(path), timeout=10000)
+            return str(path)
         except Exception:
             return None

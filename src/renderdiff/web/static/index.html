@@ -380,10 +380,16 @@ function createUrlCard(r) {
   if (r.render && r.render.screenshot_path) {
     const details = document.createElement('details');
     details.className = 'screenshot';
+    details.setAttribute('open', '');
     details.innerHTML = `<summary>Screenshot (rendered page)</summary>
       <img src="/api/scan/${currentRunId}/screenshot/${encodeURIComponent(r.render.screenshot_path)}"
            alt="Screenshot of ${escapeHtml(r.url)}" loading="lazy">`;
     body.appendChild(details);
+  } else if (r.render && !r.skipped) {
+    const note = document.createElement('div');
+    note.className = 'skip-reason';
+    note.textContent = 'Screenshot not available';
+    body.appendChild(note);
   }
 
   // Signal comparison
