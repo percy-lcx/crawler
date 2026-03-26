@@ -99,12 +99,16 @@ def test_structured_data_diff_is_critical():
 
 
 def test_word_count_threshold():
-    raw = SeoSignals(word_count=100)
-    rendered = SeoSignals(word_count=130)  # 30% > 20% threshold
+    raw_words = frozenset(f"word{i}" for i in range(100))
+    rendered_words = frozenset(f"word{i}" for i in range(130))
+    raw = SeoSignals(word_count=100, body_text_words=raw_words)
+    rendered = SeoSignals(word_count=130, body_text_words=rendered_words)  # 30% > 20% threshold
     diffs = diff_signals(raw, rendered, _make_fetch())
     wc_diffs = [d for d in diffs if d.field == "word_count"]
     assert len(wc_diffs) == 1
     assert wc_diffs[0].severity == Severity.WARNING
+    assert wc_diffs[0].details is not None
+    assert len(wc_diffs[0].details["only_in_rendered"]) == 30
 
 
 def test_word_count_within_threshold():
@@ -214,6 +218,26 @@ def test_identical_lists_no_details():
     diffs = diff_signals(raw, rendered, _make_fetch())
     h1_diffs = [d for d in diffs if d.field == "h1_texts"]
     assert len(h1_diffs) == 0
+
+
+def test_word_count_itemized_words():
+    """Word count diff lists specific words only in rendered vs raw."""
+    raw = SeoSignals(
+        word_count=5,
+        body_text_words=frozenset(["hello", "world", "foo", "bar", "baz"]),
+    )
+    rendered = SeoSignals(
+        word_count=8,
+        body_text_words=frozenset(["hello", "world", "foo", "extra", "js", "injected", "new", "content"]),
+    )
+    diffs = diff_signals(raw, rendered, _make_fetch())
+    wc_diffs = [d for d in diffs if d.field == "word_count"]
+    assert len(wc_diffs) == 1
+    assert wc_diffs[0].details is not None
+    assert "bar" in wc_diffs[0].details["only_in_raw"]
+    assert "baz" in wc_diffs[0].details["only_in_raw"]
+    assert "extra" in wc_diffs[0].details["only_in_rendered"]
+    assert "injected" in wc_diffs[0].details["only_in_rendered"]
 
 
 def test_full_sample_diff():

@@ -87,6 +87,7 @@ class SeoSignals(BaseModel):
     images: list[ImageInfo] = Field(default_factory=list)
     hreflang: list[HreflangEntry] = Field(default_factory=list)
     word_count: int = 0
+    body_text_words: frozenset[str] = Field(default_factory=frozenset, exclude=True)
     html_size_bytes: int = 0
 
 

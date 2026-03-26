@@ -80,6 +80,8 @@ def test_extract_hreflang():
 def test_extract_word_count():
     signals = extract_signals(SAMPLE_HTML, BASE_URL)
     assert signals.word_count > 0
+    assert len(signals.body_text_words) > 0
+    assert "visible" in signals.body_text_words
 
 
 def test_extract_html_size():
