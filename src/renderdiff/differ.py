@@ -134,15 +134,31 @@ def diff_signals(
             )
         )
 
-    # Word count
-    _diff_count(
-        diffs,
-        "word_count",
-        raw.word_count,
-        rendered.word_count,
-        WORD_COUNT_THRESHOLD_PCT,
-        Severity.WARNING,
-    )
+    # Word count — itemized diff
+    pct = _pct_change(raw.word_count, rendered.word_count)
+    if pct > WORD_COUNT_THRESHOLD_PCT:
+        only_in_raw_words = sorted(raw.body_text_words - rendered.body_text_words)
+        only_in_rendered_words = sorted(rendered.body_text_words - raw.body_text_words)
+
+        wc_details: dict[str, list[str]] = {}
+        if only_in_rendered_words:
+            wc_details["only_in_rendered"] = only_in_rendered_words
+        if only_in_raw_words:
+            wc_details["only_in_raw"] = only_in_raw_words
+
+        diffs.append(
+            SignalDiff(
+                field="word_count",
+                severity=Severity.WARNING,
+                raw_value=raw.word_count,
+                rendered_value=rendered.word_count,
+                message=(
+                    f"word_count: count differs by {pct:.0f}% "
+                    f"(raw={raw.word_count}, rendered={rendered.word_count})"
+                ),
+                details=wc_details if wc_details else None,
+            )
+        )
 
     # HTML size
     if raw.html_size_bytes != rendered.html_size_bytes:
@@ -239,30 +255,6 @@ def _diff_list(
                 rendered_value=rendered_val,
                 message=msg,
                 details=details if details else None,
-            )
-        )
-
-
-def _diff_count(
-    diffs: list[SignalDiff],
-    field: str,
-    raw_count: int,
-    rendered_count: int,
-    threshold_pct: int,
-    severity: Severity,
-) -> None:
-    pct = _pct_change(raw_count, rendered_count)
-    if pct > threshold_pct:
-        diffs.append(
-            SignalDiff(
-                field=field,
-                severity=severity,
-                raw_value=raw_count,
-                rendered_value=rendered_count,
-                message=(
-                    f"{field}: count differs by {pct:.0f}% "
-                    f"(raw={raw_count}, rendered={rendered_count})"
-                ),
             )
         )
 

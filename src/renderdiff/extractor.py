@@ -25,8 +25,9 @@ def extract_signals(
     """Parse HTML and extract all SEO signals."""
     soup = BeautifulSoup(html, "lxml")
     base_domain = urlparse(base_url).netloc
+    html_size = len(html.encode("utf-8"))
 
-    return SeoSignals(
+    signals = SeoSignals(
         title=_extract_title(soup),
         meta_description=_extract_meta(soup, "description"),
         canonical=_extract_canonical(soup),
@@ -40,9 +41,15 @@ def extract_signals(
         internal_links=_extract_links(soup, base_url, base_domain),
         images=_extract_images(soup, base_url),
         hreflang=_extract_hreflang(soup),
-        word_count=_extract_word_count(soup),
-        html_size_bytes=len(html.encode("utf-8")),
+        html_size_bytes=html_size,
     )
+
+    # Must be last — _extract_text_words mutates the soup via decompose()
+    wc, bw = _extract_text_words(soup)
+    signals.word_count = wc
+    signals.body_text_words = bw
+
+    return signals
 
 
 def _extract_title(soup: BeautifulSoup) -> str | None:
@@ -153,9 +160,10 @@ def _extract_hreflang(soup: BeautifulSoup) -> list[HreflangEntry]:
     return entries
 
 
-def _extract_word_count(soup: BeautifulSoup) -> int:
+def _extract_text_words(soup: BeautifulSoup) -> tuple[int, frozenset[str]]:
+    """Return (word_count, unique_words) from visible text."""
     for tag in soup.find_all(["script", "style", "noscript"]):
         tag.decompose()
     text = soup.get_text(separator=" ", strip=True)
     words = text.split()
-    return len(words)
+    return len(words), frozenset(words)
