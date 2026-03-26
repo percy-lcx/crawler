@@ -15,5 +15,5 @@ def test_no_args_shows_help():
 
 
 def test_no_url_source_exits_with_error():
-    result = runner.invoke(app, [])
+    result = runner.invoke(app, ["scan"])
     assert result.exit_code == 1
