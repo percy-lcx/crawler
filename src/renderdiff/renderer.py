@@ -11,8 +11,8 @@ from typing import Self
 from playwright.async_api import async_playwright, Browser, Page, Playwright
 
 from .constants import (
-    DEFAULT_TIMEOUT_MS,
     MOBILE_GOOGLEBOT_UA,
+    NAVIGATION_TIMEOUT_MS,
     SETTLE_SECONDS,
     VIEWPORT_HEIGHT,
     VIEWPORT_WIDTH,
@@ -89,8 +89,8 @@ class HeadlessRenderer:
             try:
                 await page.goto(
                     url,
-                    wait_until="networkidle",
-                    timeout=DEFAULT_TIMEOUT_MS,
+                    wait_until="load",
+                    timeout=NAVIGATION_TIMEOUT_MS,
                 )
             except Exception as exc:
                 elapsed_ms = (time.monotonic() - start) * 1000
