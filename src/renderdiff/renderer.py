@@ -98,6 +98,10 @@ class HeadlessRenderer:
                     rendered_html = await page.content()
                 except Exception:
                     rendered_html = ""
+                # Still attempt screenshot on partial load
+                screenshot_path = None
+                if self._screenshot_dir:
+                    screenshot_path = await self._take_screenshot(page, url)
                 return RenderResult(
                     url=url,
                     rendered_html=rendered_html,
@@ -105,6 +109,7 @@ class HeadlessRenderer:
                     console_errors=console_errors,
                     failed_requests=failed_requests,
                     render_time_ms=elapsed_ms,
+                    screenshot_path=screenshot_path,
                     error=f"Navigation error: {exc}",
                 )
 
