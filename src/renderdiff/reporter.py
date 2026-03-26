@@ -130,6 +130,7 @@ def write_html_report(report: RunReport, output_path: str) -> None:
           max-width: 300px; overflow-wrap: break-word; }}
   .val-raw {{ color: #f85149; }}
   .val-rendered {{ color: #3fb950; }}
+  .diff-table td ul {{ list-style-type: disc; }}
   .screenshot {{ margin-top: 1rem; }}
   .screenshot img {{ max-width: 100%; border: 1px solid #30363d; border-radius: 6px; }}
   .screenshot summary {{ cursor: pointer; color: #58a6ff; font-size: .9rem; margin-bottom: .5rem; }}
@@ -181,11 +182,12 @@ def _render_url_section(r: UrlReport) -> str:
             sev_class = d.severity.value
             raw_display = _format_value(d.raw_value)
             rendered_display = _format_value(d.rendered_value)
+            details_html = _render_details(d.details)
             rows += f"""\
 <tr class="{sev_class}">
   <td><span class="sev sev-{sev_class}">{d.severity.value}</span></td>
   <td>{html.escape(d.field)}</td>
-  <td>{html.escape(d.message)}</td>
+  <td>{html.escape(d.message)}{details_html}</td>
   <td><span class="val val-raw">{raw_display}</span></td>
   <td><span class="val val-rendered">{rendered_display}</span></td>
 </tr>"""
@@ -246,6 +248,37 @@ def _format_value(val: object) -> str:
     if len(s) > 200:
         s = s[:200] + "..."
     return html.escape(s)
+
+
+_MAX_DETAIL_ITEMS = 20
+
+
+def _render_details(details: dict[str, list[str]] | None) -> str:
+    """Render itemized details as an HTML sub-section."""
+    if not details:
+        return ""
+
+    parts: list[str] = []
+    for label, key, css_class in [
+        ("Only in rendered", "only_in_rendered", "val-rendered"),
+        ("Only in raw", "only_in_raw", "val-raw"),
+    ]:
+        items = details.get(key, [])
+        if not items:
+            continue
+        li_items = "".join(
+            f"<li>{html.escape(item)}</li>" for item in items[:_MAX_DETAIL_ITEMS]
+        )
+        overflow = ""
+        if len(items) > _MAX_DETAIL_ITEMS:
+            overflow = f"<li><em>...and {len(items) - _MAX_DETAIL_ITEMS} more</em></li>"
+        parts.append(
+            f'<div class="{css_class}" style="margin-top:.25rem">'
+            f"<strong>{html.escape(label)} ({len(items)}):</strong>"
+            f'<ul style="margin:.25rem 0 .25rem 1rem;font-size:.8rem">{li_items}{overflow}</ul>'
+            f"</div>"
+        )
+    return "".join(parts)
 
 
 def _embed_image(path: str) -> str | None:
