@@ -152,6 +152,7 @@ class IndexResult(BaseModel):
     result_count: str = ""
     top_result_url: str | None = None
     check_time_ms: float = 0.0
+    screenshot_path: str | None = None
     error: str | None = None
 
 

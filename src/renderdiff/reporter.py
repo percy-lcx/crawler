@@ -78,6 +78,7 @@ def print_index_summary(report: IndexReport) -> None:
     table.add_column("URL", style="cyan", max_width=80)
     table.add_column("Status", justify="center")
     table.add_column("Result Count", justify="center")
+    table.add_column("Screenshot", style="dim", max_width=40)
     table.add_column("Time (ms)", justify="right")
 
     for result in report.results:
@@ -94,6 +95,7 @@ def print_index_summary(report: IndexReport) -> None:
             result.url,
             status,
             result.result_count or "-",
+            result.screenshot_path or "-",
             f"{result.check_time_ms:.0f}",
         )
 
@@ -116,6 +118,113 @@ def write_index_json_report(report: IndexReport, output_path: str) -> None:
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(report.model_dump_json(indent=2))
+
+
+def write_index_html_report(report: IndexReport, output_path: str) -> None:
+    """Write a visual HTML report for indexation checks with SERP screenshots."""
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    url_cards = "\n".join(_render_index_card(r) for r in report.results)
+
+    page = f"""\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Indexation Report — {html.escape(report.run_id)}</title>
+<style>
+  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+         background: #0d1117; color: #c9d1d9; padding: 2rem; line-height: 1.5; }}
+  h1 {{ color: #f0f6fc; margin-bottom: .5rem; }}
+  .meta {{ color: #8b949e; margin-bottom: 2rem; font-size: .9rem; }}
+  .summary {{ display: flex; gap: 1.5rem; margin-bottom: 2rem; flex-wrap: wrap; }}
+  .summary .stat {{ padding: .75rem 1.25rem; border-radius: 8px; font-weight: 600; font-size: 1.1rem; }}
+  .stat-indexed {{ background: #0d1f0d; color: #3fb950; border: 1px solid #238636; }}
+  .stat-not-indexed {{ background: #1f0d0d; color: #f85149; border: 1px solid #da3633; }}
+  .stat-blocked {{ background: #1f1d0d; color: #d29922; border: 1px solid #9e6a03; }}
+  .stat-errors {{ background: #161b22; color: #8b949e; border: 1px solid #30363d; }}
+  .card {{ background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+           margin-bottom: 1.5rem; overflow: hidden; }}
+  .card-header {{ padding: 1rem 1.25rem; border-bottom: 1px solid #30363d; display: flex;
+                  justify-content: space-between; align-items: center; flex-wrap: wrap; gap: .5rem; }}
+  .card-header h2 {{ font-size: 1rem; color: #58a6ff; word-break: break-all; }}
+  .badge {{ padding: .25rem .75rem; border-radius: 12px; font-size: .8rem; font-weight: 600;
+            text-transform: uppercase; white-space: nowrap; }}
+  .badge-indexed {{ background: #238636; color: #fff; }}
+  .badge-not_indexed {{ background: #da3633; color: #fff; }}
+  .badge-blocked {{ background: #9e6a03; color: #fff; }}
+  .badge-error {{ background: #30363d; color: #8b949e; }}
+  .card-body {{ padding: 1.25rem; }}
+  .card-body .info {{ color: #8b949e; font-size: .9rem; margin-bottom: .75rem; }}
+  .card-body .info span {{ color: #c9d1d9; }}
+  .screenshot img {{ max-width: 100%; border: 1px solid #30363d; border-radius: 6px; margin-top: .5rem; }}
+  .screenshot summary {{ cursor: pointer; color: #58a6ff; font-size: .9rem; margin-bottom: .5rem; }}
+  .error-msg {{ color: #f85149; font-size: .85rem; margin-top: .5rem; }}
+</style>
+</head>
+<body>
+<h1>Indexation Report</h1>
+<div class="meta">
+  Run ID: {html.escape(report.run_id)} &middot;
+  {html.escape(report.started_at)} &middot;
+  {report.total_urls} URL(s)
+</div>
+<div class="summary">
+  <div class="stat stat-indexed">{report.indexed} Indexed</div>
+  <div class="stat stat-not-indexed">{report.not_indexed} Not Indexed</div>
+  <div class="stat stat-blocked">{report.blocked} Blocked</div>
+  <div class="stat stat-errors">{report.errors} Errors</div>
+</div>
+{url_cards}
+</body>
+</html>"""
+
+    path.write_text(page)
+
+
+def _render_index_card(r: IndexResult) -> str:
+    """Render one URL card for the indexation HTML report."""
+    badge_class = f"badge-{r.status.value}"
+    badge_text = r.status.value.replace("_", " ").upper()
+
+    info_parts = []
+    if r.result_count:
+        info_parts.append(f"Results: <span>{html.escape(r.result_count)}</span>")
+    if r.top_result_url:
+        info_parts.append(f"Top result: <span>{html.escape(r.top_result_url)}</span>")
+    info_parts.append(f"Query: <span>{html.escape(r.query)}</span>")
+    info_parts.append(f"Time: <span>{r.check_time_ms:.0f} ms</span>")
+    info_html = "<br>".join(info_parts)
+
+    error_html = ""
+    if r.error:
+        error_html = f'<div class="error-msg">{html.escape(r.error)}</div>'
+
+    screenshot_html = ""
+    if r.screenshot_path:
+        img_data = _embed_image(r.screenshot_path)
+        if img_data:
+            screenshot_html = f"""\
+<details class="screenshot" open>
+  <summary>Google SERP screenshot</summary>
+  <img src="{img_data}" alt="Google SERP for {html.escape(r.url)}">
+</details>"""
+
+    return f"""\
+<div class="card">
+  <div class="card-header">
+    <h2>{html.escape(r.url)}</h2>
+    <span class="badge {badge_class}">{badge_text}</span>
+  </div>
+  <div class="card-body">
+    <div class="info">{info_html}</div>
+    {error_html}
+    {screenshot_html}
+  </div>
+</div>"""
 
 
 def write_json_report(report: RunReport, output_path: str) -> None:
