@@ -9,7 +9,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 
-from .models import RunReport, Severity, UrlReport
+from .models import IndexReport, IndexStatus, RunReport, Severity, UrlReport
 
 
 def print_cli_summary(report: RunReport) -> None:
@@ -68,6 +68,54 @@ def print_cli_summary(report: RunReport) -> None:
         parts.append(f"[dim]{report.skipped} skipped[/dim]")
 
     console.print(f"\nTotal: {', '.join(parts)} out of {report.total_urls} URLs\n")
+
+
+def print_index_summary(report: IndexReport) -> None:
+    """Print indexation check results as a Rich table."""
+    console = Console()
+
+    table = Table(title="Indexation Check Results", show_lines=True)
+    table.add_column("URL", style="cyan", max_width=80)
+    table.add_column("Status", justify="center")
+    table.add_column("Result Count", justify="center")
+    table.add_column("Time (ms)", justify="right")
+
+    for result in report.results:
+        if result.status == IndexStatus.INDEXED:
+            status = "[bold green]INDEXED[/bold green]"
+        elif result.status == IndexStatus.NOT_INDEXED:
+            status = "[bold red]NOT INDEXED[/bold red]"
+        elif result.status == IndexStatus.BLOCKED:
+            status = "[bold yellow]BLOCKED[/bold yellow]"
+        else:
+            status = "[dim]ERROR[/dim]"
+
+        table.add_row(
+            result.url,
+            status,
+            result.result_count or "-",
+            f"{result.check_time_ms:.0f}",
+        )
+
+    console.print(table)
+
+    parts = []
+    if report.indexed:
+        parts.append(f"[green]{report.indexed} indexed[/green]")
+    if report.not_indexed:
+        parts.append(f"[red]{report.not_indexed} not indexed[/red]")
+    if report.blocked:
+        parts.append(f"[yellow]{report.blocked} blocked[/yellow]")
+    if report.errors:
+        parts.append(f"[dim]{report.errors} errors[/dim]")
+    console.print(f"\nTotal: {', '.join(parts)} out of {report.total_urls} URLs\n")
+
+
+def write_index_json_report(report: IndexReport, output_path: str) -> None:
+    """Write IndexReport as JSON to file."""
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(report.model_dump_json(indent=2))
 
 
 def write_json_report(report: RunReport, output_path: str) -> None:
