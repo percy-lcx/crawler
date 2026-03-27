@@ -463,6 +463,79 @@ async def _sse_generator(state: _ScanState | _IndexCheckState) -> AsyncGenerator
 
 
 # ---------------------------------------------------------------------------
+# Index check orchestration
+# ---------------------------------------------------------------------------
+
+async def _run_index_check(state: _IndexState) -> None:
+    """Background task that checks indexation for all URLs sequentially."""
+    try:
+        async with GoogleIndexChecker(
+            delay=state.delay,
+            screenshot_dir=state.screenshot_dir,
+        ) as checker:
+            for i, url in enumerate(state.urls):
+                await state.queue.put(
+                    _sse_event("url_start", {"url": url, "index": i})
+                )
+
+                result = await checker.check_url(url)
+
+                # Rewrite screenshot_path to just the filename for the API
+                if result.screenshot_path:
+                    result.screenshot_path = Path(result.screenshot_path).name
+
+                state.results.append(result)
+                state.completed += 1
+
+                await state.queue.put(
+                    _sse_event("url_done", result.model_dump(mode="json"))
+                )
+
+                # Politeness delay (skip after last URL)
+                if i < len(state.urls) - 1:
+                    await asyncio.sleep(state.delay)
+
+    except Exception as exc:
+        state.status = "error"
+        await state.queue.put(_sse_event("error", {"message": str(exc)}))
+        await state.queue.put(None)
+        return
+
+    state.finished_at = datetime.now(timezone.utc).isoformat()
+    state.status = "complete"
+
+    report = _build_index_report(state)
+    await state.queue.put(
+        _sse_event("index_complete", report.model_dump(mode="json"))
+    )
+    await state.queue.put(None)
+
+
+def _build_index_report(state: _IndexState) -> IndexReport:
+    results = state.results
+    return IndexReport(
+        run_id=state.run_id,
+        started_at=state.started_at,
+        finished_at=state.finished_at,
+        total_urls=len(state.urls),
+        indexed=sum(1 for r in results if r.status == IndexStatus.INDEXED),
+        not_indexed=sum(1 for r in results if r.status == IndexStatus.NOT_INDEXED),
+        blocked=sum(1 for r in results if r.status == IndexStatus.BLOCKED),
+        errors=sum(1 for r in results if r.status == IndexStatus.ERROR),
+        results=results,
+    )
+
+
+async def _sse_generator_index(state: _IndexState) -> AsyncGenerator[str, None]:
+    """Yield SSE events from the index check's queue."""
+    while True:
+        msg = await state.queue.get()
+        if msg is None:
+            break
+        yield msg
+
+
+# ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
 
