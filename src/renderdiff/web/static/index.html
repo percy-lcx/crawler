@@ -14,6 +14,14 @@
   h1 { color: #f0f6fc; margin-bottom: .25rem; font-size: 1.75rem; }
   .subtitle { color: #8b949e; margin-bottom: 2rem; font-size: .9rem; }
 
+  /* Tabs */
+  .tabs { display: flex; gap: 0; margin-bottom: 1.5rem; border-bottom: 1px solid #30363d; }
+  .tab { padding: .6rem 1.25rem; font-size: .9rem; font-weight: 600; color: #8b949e; cursor: pointer;
+         border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0;
+         background: transparent; transition: .15s; margin-bottom: -1px; }
+  .tab:hover { color: #c9d1d9; }
+  .tab.active { color: #f0f6fc; background: #161b22; border-color: #30363d; border-bottom-color: #161b22; }
+
   /* Form */
   .form-section { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; }
   label { display: block; color: #8b949e; font-size: .85rem; margin-bottom: .35rem; text-transform: uppercase; letter-spacing: .04em; }
@@ -58,6 +66,10 @@
   .stat-warn { background: #1f1d0d; color: #d29922; border: 1px solid #9e6a03; }
   .stat-fail { background: #1f0d0d; color: #f85149; border: 1px solid #da3633; }
   .stat-skip { background: #161b22; color: #8b949e; border: 1px solid #30363d; }
+  .stat-indexed { background: #0d1f0d; color: #3fb950; border: 1px solid #238636; }
+  .stat-not-indexed { background: #1f0d0d; color: #f85149; border: 1px solid #da3633; }
+  .stat-blocked { background: #1f1d0d; color: #d29922; border: 1px solid #9e6a03; }
+  .stat-errors { background: #161b22; color: #8b949e; border: 1px solid #30363d; }
 
   /* Filters */
   .filters { display: flex; gap: 1rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; }
@@ -82,6 +94,10 @@
   .badge-warn { background: #9e6a03; color: #fff; }
   .badge-fail { background: #da3633; color: #fff; }
   .badge-skip { background: #30363d; color: #8b949e; }
+  .badge-indexed { background: #238636; color: #fff; }
+  .badge-not_indexed { background: #da3633; color: #fff; }
+  .badge-blocked { background: #9e6a03; color: #fff; }
+  .badge-error { background: #30363d; color: #8b949e; }
   .url-body { padding: 1rem; display: none; }
   .url-card.expanded .url-body { display: block; }
 
@@ -102,6 +118,10 @@
   .val-raw { color: #f85149; }
   .val-rendered { color: #3fb950; }
   .diff-table td ul { list-style-type: disc; margin-left: 1rem; }
+
+  /* Index info rows */
+  .index-info { font-size: .85rem; color: #8b949e; margin-bottom: .5rem; }
+  .index-info span { color: #c9d1d9; }
 
   /* Screenshot & signals */
   details { margin-top: .75rem; }
@@ -125,10 +145,16 @@
 
 <div class="container">
   <h1>renderdiff</h1>
-  <p class="subtitle">Compare raw HTML vs JavaScript-rendered DOM for SEO signal discrepancies</p>
+  <p class="subtitle">SEO audit toolkit</p>
 
-  <!-- Input Form -->
-  <div id="form-section" class="form-section">
+  <!-- Tabs -->
+  <div class="tabs" id="mode-tabs">
+    <button class="tab active" data-mode="scan" onclick="switchMode('scan')">Render Diff</button>
+    <button class="tab" data-mode="index" onclick="switchMode('index')">Index Check</button>
+  </div>
+
+  <!-- Scan Form -->
+  <div id="scan-form-section" class="form-section">
     <div>
       <label for="urls-input">URLs (one per line)</label>
       <textarea id="urls-input" placeholder="https://example.com&#10;https://example.com/about"></textarea>
@@ -159,9 +185,37 @@
     <button class="btn btn-primary" id="start-btn" onclick="startScan()">Start Scan</button>
   </div>
 
+  <!-- Index Form -->
+  <div id="index-form-section" class="form-section" style="display:none">
+    <div>
+      <label for="idx-urls-input">URLs to check (one per line)</label>
+      <textarea id="idx-urls-input" placeholder="https://example.com&#10;https://example.com/about"></textarea>
+    </div>
+
+    <span class="advanced-toggle" id="idx-advanced-toggle">Advanced options</span>
+    <div class="advanced-section" id="idx-advanced-section">
+      <div>
+        <label for="idx-sitemap-input">Sitemap URL (optional)</label>
+        <input type="text" id="idx-sitemap-input" placeholder="https://example.com/sitemap.xml">
+      </div>
+      <div class="form-row">
+        <div>
+          <label for="idx-delay-input">Delay between queries (seconds)</label>
+          <input type="number" id="idx-delay-input" value="5" min="1" max="30" step="1">
+        </div>
+        <div>
+          <label for="idx-limit-input">URL limit</label>
+          <input type="number" id="idx-limit-input" placeholder="No limit" min="1" max="500">
+        </div>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" id="idx-start-btn" onclick="startIndexCheck()">Check Indexation</button>
+  </div>
+
   <!-- Progress -->
   <div class="progress-section" id="progress-section">
-    <div class="progress-text" id="progress-text">Preparing scan...</div>
+    <div class="progress-text" id="progress-text">Preparing...</div>
     <div class="progress-bar-wrap">
       <div class="progress-bar" id="progress-bar"></div>
     </div>
@@ -179,7 +233,7 @@
       <input type="text" class="filter-search" id="url-search" placeholder="Filter by URL..." oninput="applyFilters()">
     </div>
     <div id="results-list"></div>
-    <button class="btn btn-secondary" onclick="resetUI()">New Scan</button>
+    <button class="btn btn-secondary" onclick="resetUI()">New Check</button>
   </div>
 </div>
 
@@ -188,13 +242,29 @@ let currentRunId = null;
 let totalUrls = 0;
 let completedUrls = 0;
 let urlReports = [];
+let currentMode = 'scan'; // 'scan' or 'index'
 
-// Advanced toggle
+// Tab switching
+function switchMode(mode) {
+  currentMode = mode;
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.mode === mode));
+  document.getElementById('scan-form-section').style.display = mode === 'scan' ? '' : 'none';
+  document.getElementById('index-form-section').style.display = mode === 'index' ? '' : 'none';
+}
+
+// Advanced toggles
 document.getElementById('advanced-toggle').addEventListener('click', function() {
   const sec = document.getElementById('advanced-section');
   sec.classList.toggle('open');
   this.textContent = sec.classList.contains('open') ? 'Hide options' : 'Advanced options';
 });
+document.getElementById('idx-advanced-toggle').addEventListener('click', function() {
+  const sec = document.getElementById('idx-advanced-section');
+  sec.classList.toggle('open');
+  this.textContent = sec.classList.contains('open') ? 'Hide options' : 'Advanced options';
+});
+
+// ==================== SCAN ====================
 
 async function startScan() {
   const urlsText = document.getElementById('urls-input').value.trim();
@@ -239,17 +309,8 @@ async function startScan() {
     completedUrls = 0;
     urlReports = [];
 
-    // Switch to progress view
-    document.getElementById('form-section').style.display = 'none';
-    const progressSection = document.getElementById('progress-section');
-    progressSection.classList.add('active');
-    document.getElementById('progress-text').textContent = `0 / ${totalUrls} URLs processed`;
-    document.getElementById('progress-bar').style.width = '0%';
-    document.getElementById('url-status-list').innerHTML = '';
-    document.getElementById('results-list').innerHTML = '';
-    document.getElementById('summary-bar').innerHTML = '';
-
-    connectSSE(currentRunId);
+    showProgress('scan');
+    connectScanSSE(currentRunId);
   } catch (e) {
     alert('Error: ' + e.message);
     btn.disabled = false;
@@ -257,59 +318,40 @@ async function startScan() {
   }
 }
 
-function connectSSE(runId) {
+function connectScanSSE(runId) {
   const es = new EventSource(`/api/scan/${runId}/stream`);
 
   es.addEventListener('url_start', function(e) {
     const data = JSON.parse(e.data);
-    const list = document.getElementById('url-status-list');
-    const li = document.createElement('li');
-    li.className = 'url-status-item';
-    li.id = `url-item-${data.index}`;
-    li.innerHTML = `<span class="spinner"></span><span>${escapeHtml(data.url)}</span>`;
-    list.appendChild(li);
+    addStatusItem(data.url, data.index);
   });
 
   es.addEventListener('url_done', function(e) {
     const report = JSON.parse(e.data);
     urlReports.push(report);
     completedUrls++;
-
-    // Update progress
-    const pct = Math.round((completedUrls / totalUrls) * 100);
-    document.getElementById('progress-bar').style.width = pct + '%';
-    document.getElementById('progress-text').textContent = `${completedUrls} / ${totalUrls} URLs processed`;
+    updateProgress();
 
     // Update status list item
-    const idx = urlReports.length - 1;
-    // Find the matching url-status-item by URL
     const items = document.querySelectorAll('.url-status-item');
     for (const item of items) {
       if (item.querySelector('span:last-child')?.textContent === report.url) {
         const status = report.skipped ? 'skip' : report.overall_status;
-        const badgeClass = `badge-${status}`;
-        const badgeText = status.toUpperCase();
-        item.innerHTML = `<span class="badge ${badgeClass}">${badgeText}</span><span>${escapeHtml(report.url)}</span>`;
+        item.innerHTML = `<span class="badge badge-${status}">${status.toUpperCase()}</span><span>${escapeHtml(report.url)}</span>`;
         break;
       }
     }
 
-    // Show results section and add card
     const resultsSection = document.getElementById('results-section');
     resultsSection.classList.add('active');
-    document.getElementById('results-list').appendChild(createUrlCard(report));
+    document.getElementById('results-list').appendChild(createScanCard(report));
   });
 
   es.addEventListener('scan_complete', function(e) {
     const report = JSON.parse(e.data);
     es.close();
-
-    // Hide progress
     document.getElementById('progress-section').classList.remove('active');
-    document.getElementById('progress-text').textContent = 'Scan complete';
-
-    // Show summary
-    renderSummary(report);
+    renderScanSummary(report);
   });
 
   es.addEventListener('error', function(e) {
@@ -322,7 +364,6 @@ function connectSSE(runId) {
   });
 
   es.onerror = function() {
-    // EventSource reconnect or final close
     setTimeout(() => {
       if (es.readyState === EventSource.CLOSED) {
         document.getElementById('progress-section').classList.remove('active');
@@ -331,9 +372,9 @@ function connectSSE(runId) {
   };
 }
 
-function renderSummary(report) {
-  const bar = document.getElementById('summary-bar');
-  bar.innerHTML = `
+function renderScanSummary(report) {
+  document.getElementById('filters-bar').style.display = '';
+  document.getElementById('summary-bar').innerHTML = `
     <div class="stat stat-pass">${report.passed} Passed</div>
     <div class="stat stat-warn">${report.warned} Warned</div>
     <div class="stat stat-fail">${report.failed} Failed</div>
@@ -341,34 +382,27 @@ function renderSummary(report) {
   `;
 }
 
-function createUrlCard(r) {
+function createScanCard(r) {
   const card = document.createElement('div');
   const status = r.skipped ? 'skip' : r.overall_status;
   card.className = 'url-card';
   card.dataset.status = status;
   card.dataset.url = r.url.toLowerCase();
 
-  // Determine highest severity for filtering
   const severities = (r.diffs || []).map(d => d.severity);
   card.dataset.hasCritical = severities.includes('critical') ? '1' : '0';
   card.dataset.hasWarning = severities.includes('warning') ? '1' : '0';
   card.dataset.hasInfo = severities.includes('info') ? '1' : '0';
 
-  const badgeClass = `badge-${status}`;
-  const badgeText = status.toUpperCase();
-
-  // Header
   const header = document.createElement('div');
   header.className = 'url-header';
-  header.innerHTML = `<h2>${escapeHtml(r.url)}</h2><span class="badge ${badgeClass}">${badgeText}</span>`;
+  header.innerHTML = `<h2>${escapeHtml(r.url)}</h2><span class="badge badge-${status}">${status.toUpperCase()}</span>`;
   header.addEventListener('click', () => card.classList.toggle('expanded'));
   card.appendChild(header);
 
-  // Body
   const body = document.createElement('div');
   body.className = 'url-body';
 
-  // Show render error if present
   if (r.render && r.render.error) {
     const warn = document.createElement('div');
     warn.className = 'skip-reason';
@@ -384,7 +418,6 @@ function createUrlCard(r) {
     body.appendChild(createDiffTable(r.diffs));
   }
 
-  // Screenshot
   if (r.render && r.render.screenshot_path) {
     const details = document.createElement('details');
     details.className = 'screenshot';
@@ -393,14 +426,8 @@ function createUrlCard(r) {
       <img src="/api/scan/${currentRunId}/screenshot/${encodeURIComponent(r.render.screenshot_path)}"
            alt="Screenshot of ${escapeHtml(r.url)}" loading="lazy">`;
     body.appendChild(details);
-  } else if (r.render && !r.skipped) {
-    const note = document.createElement('div');
-    note.className = 'skip-reason';
-    note.textContent = 'Screenshot not available';
-    body.appendChild(note);
   }
 
-  // Signal comparison
   if (r.raw_signals && r.rendered_signals) {
     const details = document.createElement('details');
     details.className = 'signals';
@@ -414,6 +441,205 @@ function createUrlCard(r) {
 
   card.appendChild(body);
   return card;
+}
+
+// ==================== INDEX CHECK ====================
+
+async function startIndexCheck() {
+  const urlsText = document.getElementById('idx-urls-input').value.trim();
+  const sitemap = document.getElementById('idx-sitemap-input').value.trim();
+  const delay = parseFloat(document.getElementById('idx-delay-input').value) || 5;
+  const limitVal = document.getElementById('idx-limit-input').value.trim();
+  const limit = limitVal ? parseInt(limitVal) : null;
+
+  const urls = urlsText ? urlsText.split('\n').map(u => u.trim()).filter(u => u) : [];
+  if (!urls.length && !sitemap) {
+    alert('Please enter at least one URL or a sitemap URL.');
+    return;
+  }
+
+  const btn = document.getElementById('idx-start-btn');
+  btn.disabled = true;
+  btn.textContent = 'Starting...';
+
+  try {
+    const body = { urls, delay };
+    if (sitemap) body.sitemap = sitemap;
+    if (limit) body.limit = limit;
+
+    const res = await fetch('/api/index', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      alert(err.detail || 'Failed to start index check');
+      btn.disabled = false;
+      btn.textContent = 'Check Indexation';
+      return;
+    }
+
+    const data = await res.json();
+    currentRunId = data.run_id;
+    totalUrls = data.total_urls;
+    completedUrls = 0;
+    urlReports = [];
+
+    showProgress('index');
+    connectIndexSSE(currentRunId);
+  } catch (e) {
+    alert('Error: ' + e.message);
+    btn.disabled = false;
+    btn.textContent = 'Check Indexation';
+  }
+}
+
+function connectIndexSSE(runId) {
+  const es = new EventSource(`/api/index/${runId}/stream`);
+
+  es.addEventListener('url_start', function(e) {
+    const data = JSON.parse(e.data);
+    addStatusItem(data.url, data.index);
+  });
+
+  es.addEventListener('url_done', function(e) {
+    const result = JSON.parse(e.data);
+    urlReports.push(result);
+    completedUrls++;
+    updateProgress();
+
+    // Update status list item
+    const badgeClass = 'badge-' + result.status;
+    const badgeText = result.status.replace('_', ' ').toUpperCase();
+    const items = document.querySelectorAll('.url-status-item');
+    for (const item of items) {
+      if (item.querySelector('span:last-child')?.textContent === result.url) {
+        item.innerHTML = `<span class="badge ${badgeClass}">${badgeText}</span><span>${escapeHtml(result.url)}</span>`;
+        break;
+      }
+    }
+
+    const resultsSection = document.getElementById('results-section');
+    resultsSection.classList.add('active');
+    document.getElementById('results-list').appendChild(createIndexCard(result, runId));
+  });
+
+  es.addEventListener('index_complete', function(e) {
+    const report = JSON.parse(e.data);
+    es.close();
+    document.getElementById('progress-section').classList.remove('active');
+    renderIndexSummary(report);
+  });
+
+  es.addEventListener('error', function(e) {
+    if (e.data) {
+      const data = JSON.parse(e.data);
+      alert('Index check error: ' + data.message);
+    }
+    es.close();
+    resetUI();
+  });
+
+  es.onerror = function() {
+    setTimeout(() => {
+      if (es.readyState === EventSource.CLOSED) {
+        document.getElementById('progress-section').classList.remove('active');
+      }
+    }, 1000);
+  };
+}
+
+function renderIndexSummary(report) {
+  // Hide scan-specific filters for index results
+  document.getElementById('filters-bar').style.display = 'none';
+  document.getElementById('summary-bar').innerHTML = `
+    <div class="stat stat-indexed">${report.indexed} Indexed</div>
+    <div class="stat stat-not-indexed">${report.not_indexed} Not Indexed</div>
+    <div class="stat stat-blocked">${report.blocked} Blocked</div>
+    <div class="stat stat-errors">${report.errors} Errors</div>
+  `;
+}
+
+function createIndexCard(r, runId) {
+  const card = document.createElement('div');
+  card.className = 'url-card';
+  card.dataset.status = r.status;
+  card.dataset.url = r.url.toLowerCase();
+
+  const badgeClass = 'badge-' + r.status;
+  const badgeText = r.status.replace('_', ' ').toUpperCase();
+
+  const header = document.createElement('div');
+  header.className = 'url-header';
+  header.innerHTML = `<h2>${escapeHtml(r.url)}</h2><span class="badge ${badgeClass}">${badgeText}</span>`;
+  header.addEventListener('click', () => card.classList.toggle('expanded'));
+  card.appendChild(header);
+
+  const body = document.createElement('div');
+  body.className = 'url-body';
+
+  // Info rows
+  let infoHtml = `<div class="index-info">Query: <span>${escapeHtml(r.query || '')}</span></div>`;
+  if (r.result_count) {
+    infoHtml += `<div class="index-info">Results: <span>${escapeHtml(r.result_count)}</span></div>`;
+  }
+  if (r.top_result_url) {
+    infoHtml += `<div class="index-info">Top result: <span>${escapeHtml(r.top_result_url)}</span></div>`;
+  }
+  infoHtml += `<div class="index-info">Check time: <span>${Math.round(r.check_time_ms)} ms</span></div>`;
+  body.innerHTML = infoHtml;
+
+  if (r.error) {
+    const errDiv = document.createElement('div');
+    errDiv.className = 'skip-reason';
+    errDiv.textContent = 'Error: ' + r.error;
+    body.appendChild(errDiv);
+  }
+
+  // SERP screenshot
+  if (r.screenshot_path) {
+    const details = document.createElement('details');
+    details.className = 'screenshot';
+    details.setAttribute('open', '');
+    details.innerHTML = `<summary>Google SERP screenshot</summary>
+      <img src="/api/index/${runId}/screenshot/${encodeURIComponent(r.screenshot_path)}"
+           alt="Google SERP for ${escapeHtml(r.url)}" loading="lazy">`;
+    body.appendChild(details);
+  }
+
+  card.appendChild(body);
+  return card;
+}
+
+// ==================== SHARED ====================
+
+function showProgress(mode) {
+  document.getElementById('scan-form-section').style.display = 'none';
+  document.getElementById('index-form-section').style.display = 'none';
+  const progressSection = document.getElementById('progress-section');
+  progressSection.classList.add('active');
+  document.getElementById('progress-text').textContent = `0 / ${totalUrls} URLs processed`;
+  document.getElementById('progress-bar').style.width = '0%';
+  document.getElementById('url-status-list').innerHTML = '';
+  document.getElementById('results-list').innerHTML = '';
+  document.getElementById('summary-bar').innerHTML = '';
+}
+
+function addStatusItem(url, index) {
+  const list = document.getElementById('url-status-list');
+  const li = document.createElement('li');
+  li.className = 'url-status-item';
+  li.id = `url-item-${index}`;
+  li.innerHTML = `<span class="spinner"></span><span>${escapeHtml(url)}</span>`;
+  list.appendChild(li);
+}
+
+function updateProgress() {
+  const pct = Math.round((completedUrls / totalUrls) * 100);
+  document.getElementById('progress-bar').style.width = pct + '%';
+  document.getElementById('progress-text').textContent = `${completedUrls} / ${totalUrls} URLs processed`;
 }
 
 function createDiffTable(diffs) {
@@ -500,24 +726,22 @@ function applyFilters() {
     const url = card.dataset.url;
     const status = card.dataset.status;
 
-    // URL search filter
     if (searchTerm && !url.includes(searchTerm)) {
       card.style.display = 'none';
       return;
     }
 
-    // Severity filter
     let show = false;
     if (status === 'pass' && activeSeverities.has('pass')) show = true;
     if (status === 'skip' && activeSeverities.has('pass')) show = true;
     if (card.dataset.hasCritical === '1' && activeSeverities.has('critical')) show = true;
     if (card.dataset.hasWarning === '1' && activeSeverities.has('warning')) show = true;
     if (card.dataset.hasInfo === '1' && activeSeverities.has('info')) show = true;
-    // If card has no diffs and is pass, show under "pass" filter
-    if (status === 'pass' && activeSeverities.has('pass')) show = true;
-    // Fail/warn cards: show if their severity is active
     if (status === 'fail' && activeSeverities.has('critical')) show = true;
     if (status === 'warn' && activeSeverities.has('warning')) show = true;
+
+    // For index results, always show (filters don't apply)
+    if (['indexed', 'not_indexed', 'blocked', 'error'].includes(status)) show = true;
 
     card.style.display = show ? '' : 'none';
   });
@@ -528,15 +752,20 @@ function resetUI() {
   totalUrls = 0;
   completedUrls = 0;
   urlReports = [];
-  document.getElementById('form-section').style.display = '';
+  // Show correct form based on current mode
+  document.getElementById('scan-form-section').style.display = currentMode === 'scan' ? '' : 'none';
+  document.getElementById('index-form-section').style.display = currentMode === 'index' ? '' : 'none';
   document.getElementById('start-btn').disabled = false;
   document.getElementById('start-btn').textContent = 'Start Scan';
+  document.getElementById('idx-start-btn').disabled = false;
+  document.getElementById('idx-start-btn').textContent = 'Check Indexation';
   document.getElementById('progress-section').classList.remove('active');
   document.getElementById('results-section').classList.remove('active');
   document.getElementById('results-list').innerHTML = '';
   document.getElementById('summary-bar').innerHTML = '';
   document.getElementById('url-status-list').innerHTML = '';
   document.getElementById('progress-bar').style.width = '0%';
+  document.getElementById('filters-bar').style.display = '';
 }
 
 function escapeHtml(str) {
