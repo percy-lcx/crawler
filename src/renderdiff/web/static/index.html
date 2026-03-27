@@ -367,7 +367,7 @@ function connectScanSSE(runId) {
 
     const resultsSection = document.getElementById('results-section');
     resultsSection.classList.add('active');
-    document.getElementById('results-list').appendChild(createScanCard(report));
+    document.getElementById('results-list').appendChild(createUrlCard(report));
   });
 
   es.addEventListener('scan_complete', function(e) {
