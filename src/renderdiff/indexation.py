@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import time
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Self
 from urllib.parse import quote_plus
 
 from bs4 import BeautifulSoup
-from playwright.async_api import Browser, Playwright, async_playwright
+from playwright.async_api import Browser, Page, Playwright, async_playwright
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
@@ -23,12 +26,20 @@ from .constants import (
 )
 from .models import IndexReport, IndexResult, IndexStatus
 
+_VIEWPORT_WIDTH = 1280
+_VIEWPORT_HEIGHT = 800
+
 
 class GoogleIndexChecker:
     """Checks URL indexation via Google site: searches using Playwright."""
 
-    def __init__(self, delay: float = DEFAULT_INDEX_DELAY_S) -> None:
+    def __init__(
+        self,
+        delay: float = DEFAULT_INDEX_DELAY_S,
+        screenshot_dir: str | None = None,
+    ) -> None:
         self._delay = delay
+        self._screenshot_dir = screenshot_dir
         self._playwright: Playwright | None = None
         self._browser: Browser | None = None
 
@@ -56,7 +67,7 @@ class GoogleIndexChecker:
 
         context = await self._browser.new_context(
             user_agent=GENERIC_BROWSER_UA,
-            viewport={"width": 1280, "height": 800},
+            viewport={"width": _VIEWPORT_WIDTH, "height": _VIEWPORT_HEIGHT},
             locale="en-US",
         )
 
@@ -71,11 +82,13 @@ class GoogleIndexChecker:
                 )
             except Exception as exc:
                 elapsed = (time.monotonic() - start) * 1000
+                screenshot_path = await self._take_screenshot(page, url)
                 return IndexResult(
                     url=url,
                     status=IndexStatus.ERROR,
                     query=query,
                     check_time_ms=elapsed,
+                    screenshot_path=screenshot_path,
                     error=f"Navigation error: {exc}",
                 )
 
@@ -90,6 +103,9 @@ class GoogleIndexChecker:
             except Exception:
                 pass
 
+            # Take screenshot of the SERP before parsing
+            screenshot_path = await self._take_screenshot(page, url)
+
             html = await page.content()
             elapsed = (time.monotonic() - start) * 1000
 
@@ -103,6 +119,7 @@ class GoogleIndexChecker:
                 result_count=result_count,
                 top_result_url=top_url,
                 check_time_ms=elapsed,
+                screenshot_path=screenshot_path,
             )
 
         except Exception as exc:
@@ -116,6 +133,51 @@ class GoogleIndexChecker:
             )
         finally:
             await context.close()
+
+    async def _take_screenshot(self, page: Page, url: str) -> str | None:
+        """Capture a screenshot of the SERP page."""
+        if not self._screenshot_dir:
+            return None
+
+        slug = hashlib.md5(url.encode()).hexdigest()[:12]
+        dir_path = Path(self._screenshot_dir)
+        dir_path.mkdir(parents=True, exist_ok=True)
+        path = dir_path / f"{slug}.png"
+
+        # Try CDP first (faster)
+        try:
+            cdp = await page.context.new_cdp_session(page)
+            try:
+                result = await asyncio.wait_for(
+                    cdp.send(
+                        "Page.captureScreenshot",
+                        {
+                            "format": "png",
+                            "clip": {
+                                "x": 0,
+                                "y": 0,
+                                "width": _VIEWPORT_WIDTH,
+                                "height": _VIEWPORT_HEIGHT,
+                                "scale": 1,
+                            },
+                        },
+                    ),
+                    timeout=10.0,
+                )
+                data = base64.b64decode(result["data"])
+                path.write_bytes(data)
+                return str(path)
+            finally:
+                await cdp.detach()
+        except Exception:
+            pass
+
+        # Fallback: Playwright screenshot
+        try:
+            await page.screenshot(path=str(path), timeout=10000)
+            return str(path)
+        except Exception:
+            return None
 
 
 def _parse_serp(html: str) -> tuple[IndexStatus, str, str | None]:
@@ -159,6 +221,7 @@ def _parse_serp(html: str) -> tuple[IndexStatus, str, str | None]:
 async def check_indexation(
     urls: list[str],
     delay: float = DEFAULT_INDEX_DELAY_S,
+    screenshot_dir: str | None = None,
 ) -> IndexReport:
     """Check Google indexation for all URLs sequentially."""
     run_id = uuid.uuid4().hex[:8]
@@ -172,7 +235,7 @@ async def check_indexation(
 
     console = Console()
 
-    async with GoogleIndexChecker(delay=delay) as checker:
+    async with GoogleIndexChecker(delay=delay, screenshot_dir=screenshot_dir) as checker:
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),

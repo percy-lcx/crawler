@@ -14,6 +14,7 @@ from .reporter import (
     print_cli_summary,
     print_index_summary,
     write_html_report,
+    write_index_html_report,
     write_index_json_report,
     write_json_report,
 )
@@ -57,6 +58,9 @@ def index(
     output: Optional[str] = typer.Option(
         None, "--output", "-o", help="Path to write JSON report"
     ),
+    html_report: Optional[str] = typer.Option(
+        None, "--html", help="Path to write HTML report with SERP screenshots"
+    ),
 ) -> None:
     """Check whether URLs are indexed by Google via site: search."""
     if not url and not input_file and not sitemap:
@@ -74,6 +78,7 @@ def index(
                 delay=delay,
                 limit=limit,
                 output=output,
+                html_report=html_report,
             )
         )
     except KeyboardInterrupt:
@@ -88,6 +93,7 @@ async def _index_async(
     delay: float,
     limit: int | None,
     output: str | None,
+    html_report: str | None,
 ) -> None:
     urls = await resolve_urls(
         url=url,
@@ -102,15 +108,25 @@ async def _index_async(
 
     typer.echo(f"Checking indexation for {len(urls)} URL(s) (delay={delay}s)...\n")
 
+    screenshot_dir = None
+    if html_report:
+        from pathlib import Path
+
+        screenshot_dir = str(Path(html_report).parent / ".renderdiff-screenshots")
+
     from .indexation import check_indexation
 
-    report = await check_indexation(urls, delay=delay)
+    report = await check_indexation(urls, delay=delay, screenshot_dir=screenshot_dir)
 
     print_index_summary(report)
 
     if output:
         write_index_json_report(report, output)
         typer.echo(f"JSON report written to {output}")
+
+    if html_report:
+        write_index_html_report(report, html_report)
+        typer.echo(f"HTML report written to {html_report}")
 
     if report.blocked > 0:
         raise typer.Exit(3)
