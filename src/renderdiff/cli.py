@@ -10,7 +10,13 @@ import typer
 
 from .input import resolve_urls
 from .pipeline import run
-from .reporter import print_cli_summary, write_html_report, write_json_report
+from .reporter import (
+    print_cli_summary,
+    print_index_summary,
+    write_html_report,
+    write_index_json_report,
+    write_json_report,
+)
 
 app = typer.Typer(
     name="renderdiff",
@@ -31,6 +37,85 @@ def serve(
 
     typer.echo(f"Starting renderdiff web UI at http://{host}:{port}")
     uvicorn.run(create_app(), host=host, port=port)
+
+
+@app.command()
+def index(
+    url: Optional[str] = typer.Argument(None, help="Single URL to check"),
+    input_file: Optional[str] = typer.Option(
+        None, "--input", "-i", help="File with newline-delimited URLs"
+    ),
+    sitemap: Optional[str] = typer.Option(
+        None, "--sitemap", "-s", help="Sitemap URL to parse for URLs"
+    ),
+    delay: float = typer.Option(
+        5.0, "--delay", "-d", help="Delay between Google queries in seconds"
+    ),
+    limit: Optional[int] = typer.Option(
+        None, "--limit", "-l", help="Max number of URLs to check"
+    ),
+    output: Optional[str] = typer.Option(
+        None, "--output", "-o", help="Path to write JSON report"
+    ),
+) -> None:
+    """Check whether URLs are indexed by Google via site: search."""
+    if not url and not input_file and not sitemap:
+        typer.echo(
+            "Error: provide a URL argument, --input file, or --sitemap URL", err=True
+        )
+        raise typer.Exit(1)
+
+    try:
+        asyncio.run(
+            _index_async(
+                url=url,
+                input_file=input_file,
+                sitemap=sitemap,
+                delay=delay,
+                limit=limit,
+                output=output,
+            )
+        )
+    except KeyboardInterrupt:
+        typer.echo("\nInterrupted.", err=True)
+        raise typer.Exit(130)
+
+
+async def _index_async(
+    url: str | None,
+    input_file: str | None,
+    sitemap: str | None,
+    delay: float,
+    limit: int | None,
+    output: str | None,
+) -> None:
+    urls = await resolve_urls(
+        url=url,
+        file_path=input_file,
+        sitemap_url=sitemap,
+        limit=limit,
+    )
+
+    if not urls:
+        typer.echo("No URLs to process.", err=True)
+        raise typer.Exit(1)
+
+    typer.echo(f"Checking indexation for {len(urls)} URL(s) (delay={delay}s)...\n")
+
+    from .indexation import check_indexation
+
+    report = await check_indexation(urls, delay=delay)
+
+    print_index_summary(report)
+
+    if output:
+        write_index_json_report(report, output)
+        typer.echo(f"JSON report written to {output}")
+
+    if report.blocked > 0:
+        raise typer.Exit(3)
+    elif report.not_indexed > 0:
+        raise typer.Exit(1)
 
 
 @app.command()

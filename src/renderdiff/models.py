@@ -130,3 +130,40 @@ class RunReport(BaseModel):
     failed: int = 0
     skipped: int = 0
     urls: list[UrlReport] = Field(default_factory=list)
+
+
+# --- Indexation checker models ---
+
+
+class IndexStatus(str, Enum):
+    INDEXED = "indexed"
+    NOT_INDEXED = "not_indexed"
+    BLOCKED = "blocked"
+    ERROR = "error"
+
+
+class IndexResult(BaseModel):
+    """Result of a Google site: indexation check for one URL."""
+
+    url: str
+    status: IndexStatus
+    timestamp: str = ""
+    query: str = ""
+    result_count: str = ""
+    top_result_url: str | None = None
+    check_time_ms: float = 0.0
+    error: str | None = None
+
+
+class IndexReport(BaseModel):
+    """Top-level report for an indexation check run."""
+
+    run_id: str
+    started_at: str
+    finished_at: str = ""
+    total_urls: int = 0
+    indexed: int = 0
+    not_indexed: int = 0
+    blocked: int = 0
+    errors: int = 0
+    results: list[IndexResult] = Field(default_factory=list)
