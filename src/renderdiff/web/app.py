@@ -96,6 +96,7 @@ class _IndexCheckState:
     started_at: str = ""
     finished_at: str = ""
     screenshot_dir: str = ""
+    cookies_file: str | None = None
     task: asyncio.Task | None = field(default=None, repr=False)  # type: ignore[type-arg]
 
 
@@ -113,8 +114,9 @@ _STATIC_DIR = Path(__file__).parent / "static"
 # App factory
 # ---------------------------------------------------------------------------
 
-def create_app() -> FastAPI:
+def create_app(cookies_file: str | None = None) -> FastAPI:
     app = FastAPI(title="renderdiff", docs_url="/docs")
+    app.state.cookies_file = cookies_file
 
     # -- Serve SPA ----------------------------------------------------------
 
@@ -245,6 +247,7 @@ def create_app() -> FastAPI:
             delay=req.delay,
             started_at=datetime.now(timezone.utc).isoformat(),
             screenshot_dir=screenshot_dir,
+            cookies_file=app.state.cookies_file,
         )
         _index_checks[run_id] = state
         state.task = asyncio.create_task(_run_index_check(state))
@@ -375,6 +378,7 @@ async def _run_index_check(state: _IndexCheckState) -> None:
         async with GoogleIndexChecker(
             delay=state.delay,
             screenshot_dir=state.screenshot_dir,
+            cookies_file=state.cookies_file,
         ) as checker:
             for i, url in enumerate(state.urls):
                 await state.queue.put(

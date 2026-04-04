@@ -30,6 +30,12 @@ app = typer.Typer(
 def serve(
     host: str = typer.Option("127.0.0.1", help="Bind address"),
     port: int = typer.Option(8000, help="Port number"),
+    cookies: Optional[str] = typer.Option(
+        None,
+        "--cookies",
+        "-k",
+        help="Path to cookies JSON file for Google CAPTCHA session.",
+    ),
 ) -> None:
     """Launch the web UI."""
     import uvicorn
@@ -37,7 +43,7 @@ def serve(
     from .web.app import create_app
 
     typer.echo(f"Starting renderdiff web UI at http://{host}:{port}")
-    uvicorn.run(create_app(), host=host, port=port)
+    uvicorn.run(create_app(cookies_file=cookies), host=host, port=port)
 
 
 @app.command()
@@ -61,6 +67,12 @@ def index(
     html_report: Optional[str] = typer.Option(
         None, "--html", help="Path to write HTML report with SERP screenshots"
     ),
+    cookies: Optional[str] = typer.Option(
+        None,
+        "--cookies",
+        "-k",
+        help="Path to cookies JSON file. If file doesn't exist, launches browser for CAPTCHA solving.",
+    ),
 ) -> None:
     """Check whether URLs are indexed by Google via site: search."""
     if not url and not input_file and not sitemap:
@@ -79,6 +91,7 @@ def index(
                 limit=limit,
                 output=output,
                 html_report=html_report,
+                cookies=cookies,
             )
         )
     except KeyboardInterrupt:
@@ -94,6 +107,7 @@ async def _index_async(
     limit: int | None,
     output: str | None,
     html_report: str | None,
+    cookies: str | None = None,
 ) -> None:
     urls = await resolve_urls(
         url=url,
@@ -116,7 +130,7 @@ async def _index_async(
 
     from .indexation import check_indexation
 
-    report = await check_indexation(urls, delay=delay, screenshot_dir=screenshot_dir)
+    report = await check_indexation(urls, delay=delay, screenshot_dir=screenshot_dir, cookies_file=cookies)
 
     print_index_summary(report)
 
