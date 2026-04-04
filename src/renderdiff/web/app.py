@@ -51,6 +51,7 @@ class ScanStatus(BaseModel):
 class IndexCheckRequest(BaseModel):
     urls: list[str] = Field(default_factory=list, max_length=100)
     sitemap: str | None = None
+    concurrency: int = Field(default=3, ge=1, le=10)
     delay: float = Field(default=5.0, ge=1, le=30)
     limit: int | None = Field(default=None, ge=1, le=500)
 
@@ -88,6 +89,7 @@ class _ScanState:
 class _IndexCheckState:
     run_id: str
     urls: list[str]
+    concurrency: int
     delay: float
     status: str = "running"
     completed: int = 0
@@ -248,6 +250,7 @@ def create_app(cookies_file: str | None = None) -> FastAPI:
         state = _IndexCheckState(
             run_id=run_id,
             urls=urls,
+            concurrency=req.concurrency,
             delay=req.delay,
             started_at=datetime.now(timezone.utc).isoformat(),
             screenshot_dir=screenshot_dir,
@@ -377,34 +380,20 @@ async def _process_and_emit(
 # ---------------------------------------------------------------------------
 
 async def _run_index_check(state: _IndexCheckState) -> None:
-    """Background task that checks indexation for all URLs and pushes SSE events."""
+    """Background task that checks indexation for all URLs with concurrency."""
+    semaphore = asyncio.Semaphore(state.concurrency)
+
     try:
         async with GoogleIndexChecker(
             delay=state.delay,
             screenshot_dir=state.screenshot_dir,
             cookies_file=state.cookies_file,
         ) as checker:
-            for i, url in enumerate(state.urls):
-                await state.queue.put(
-                    _sse_event("url_start", {"url": url, "index": i})
-                )
-
-                result = await checker.check_url(url)
-
-                # Rewrite screenshot_path to just the filename for the API
-                if result.screenshot_path:
-                    result.screenshot_path = Path(result.screenshot_path).name
-
-                state.results.append(result)
-                state.completed += 1
-
-                await state.queue.put(
-                    _sse_event("url_done", result.model_dump(mode="json"))
-                )
-
-                # Politeness delay (skip after last URL)
-                if i < len(state.urls) - 1:
-                    await asyncio.sleep(state.delay)
+            tasks = [
+                _check_and_emit(url, idx, checker, semaphore, state)
+                for idx, url in enumerate(state.urls)
+            ]
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     except Exception as exc:
         state.status = "error"
@@ -420,6 +409,35 @@ async def _run_index_check(state: _IndexCheckState) -> None:
         _sse_event("check_complete", report.model_dump(mode="json"))
     )
     await state.queue.put(None)  # sentinel
+
+
+async def _check_and_emit(
+    url: str,
+    index: int,
+    checker: GoogleIndexChecker,
+    semaphore: asyncio.Semaphore,
+    state: _IndexCheckState,
+) -> None:
+    """Check one URL for indexation and push SSE events."""
+    await state.queue.put(_sse_event("url_start", {"url": url, "index": index}))
+
+    async with semaphore:
+        result = await checker.check_url(url)
+
+        # Rewrite screenshot_path to just the filename for the API
+        if result.screenshot_path:
+            result.screenshot_path = Path(result.screenshot_path).name
+
+        state.results.append(result)
+        state.completed += 1
+
+        await state.queue.put(
+            _sse_event("url_done", result.model_dump(mode="json"))
+        )
+
+        # Per-worker politeness delay
+        if index < len(state.urls) - 1:
+            await asyncio.sleep(state.delay)
 
 
 def _build_index_report(state: _IndexCheckState) -> IndexReport:

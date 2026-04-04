@@ -18,6 +18,7 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from .constants import (
+    DEFAULT_INDEX_CONCURRENCY,
     DEFAULT_INDEX_DELAY_S,
     GENERIC_BROWSER_UA,
     GOOGLE_SEARCH_URL,
@@ -42,6 +43,7 @@ class GoogleIndexChecker:
         self._delay = delay
         self._screenshot_dir = screenshot_dir
         self._cookies_file = Path(cookies_file) if cookies_file else None
+        self._cookies_lock = asyncio.Lock()
         self._playwright: Playwright | None = None
         self._browser: Browser | None = None
 
@@ -173,10 +175,11 @@ class GoogleIndexChecker:
 
             # Persist fresh cookies to keep the session alive
             if self._cookies_file:
-                try:
-                    await context.storage_state(path=str(self._cookies_file))
-                except Exception:
-                    pass
+                async with self._cookies_lock:
+                    try:
+                        await context.storage_state(path=str(self._cookies_file))
+                    except Exception:
+                        pass
 
             return IndexResult(
                 url=url,
@@ -288,10 +291,11 @@ def _parse_serp(html: str) -> tuple[IndexStatus, str, str | None]:
 async def check_indexation(
     urls: list[str],
     delay: float = DEFAULT_INDEX_DELAY_S,
+    concurrency: int = DEFAULT_INDEX_CONCURRENCY,
     screenshot_dir: str | None = None,
     cookies_file: str | None = None,
 ) -> IndexReport:
-    """Check Google indexation for all URLs sequentially."""
+    """Check Google indexation for URLs with configurable concurrency."""
     run_id = uuid.uuid4().hex[:8]
     started_at = datetime.now(timezone.utc).isoformat()
 
@@ -302,6 +306,8 @@ async def check_indexation(
     )
 
     console = Console()
+    semaphore = asyncio.Semaphore(concurrency)
+    results: list[IndexResult | None] = [None] * len(urls)
 
     async with GoogleIndexChecker(delay=delay, screenshot_dir=screenshot_dir, cookies_file=cookies_file) as checker:
         with Progress(
@@ -310,30 +316,37 @@ async def check_indexation(
             console=console,
         ) as progress:
             task = progress.add_task("Checking indexation...", total=len(urls))
+            completed = 0
 
-            for i, url in enumerate(urls):
-                progress.update(
-                    task,
-                    description=f"[{i + 1}/{len(urls)}] Checking {url}",
-                )
+            async def _check_one(idx: int, url: str) -> None:
+                nonlocal completed
+                async with semaphore:
+                    result = await checker.check_url(url)
+                    results[idx] = result
+                    completed += 1
+                    progress.update(
+                        task,
+                        description=f"[{completed}/{len(urls)}] Checked {url}",
+                    )
+                    progress.advance(task)
+                    # Per-worker politeness delay (inside semaphore to
+                    # limit throughput to concurrency/delay URLs per second)
+                    if idx < len(urls) - 1:
+                        await asyncio.sleep(delay)
 
-                result = await checker.check_url(url)
-                report.results.append(result)
+            tasks = [_check_one(i, u) for i, u in enumerate(urls)]
+            await asyncio.gather(*tasks)
 
-                if result.status == IndexStatus.INDEXED:
-                    report.indexed += 1
-                elif result.status == IndexStatus.NOT_INDEXED:
-                    report.not_indexed += 1
-                elif result.status == IndexStatus.BLOCKED:
-                    report.blocked += 1
-                else:
-                    report.errors += 1
-
-                progress.advance(task)
-
-                # Politeness delay (skip after last URL)
-                if i < len(urls) - 1:
-                    await asyncio.sleep(delay)
+    for r in results:
+        report.results.append(r)
+        if r.status == IndexStatus.INDEXED:
+            report.indexed += 1
+        elif r.status == IndexStatus.NOT_INDEXED:
+            report.not_indexed += 1
+        elif r.status == IndexStatus.BLOCKED:
+            report.blocked += 1
+        else:
+            report.errors += 1
 
     report.finished_at = datetime.now(timezone.utc).isoformat()
     return report
