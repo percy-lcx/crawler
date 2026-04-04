@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from pathlib import Path
 from typing import Optional
 
 import typer
@@ -24,6 +25,8 @@ app = typer.Typer(
     help="Compare raw HTML vs rendered DOM for SEO signal discrepancies.",
     no_args_is_help=True,
 )
+
+_DEFAULT_COOKIES_PATH = str(Path.home() / ".renderdiff" / "google-cookies.json")
 
 
 @app.command()
@@ -130,7 +133,8 @@ async def _index_async(
 
     from .indexation import check_indexation
 
-    report = await check_indexation(urls, delay=delay, screenshot_dir=screenshot_dir, cookies_file=cookies)
+    cookies_path = cookies or _DEFAULT_COOKIES_PATH
+    report = await check_indexation(urls, delay=delay, screenshot_dir=screenshot_dir, cookies_file=cookies_path)
 
     print_index_summary(report)
 

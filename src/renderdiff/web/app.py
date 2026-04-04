@@ -114,9 +114,13 @@ _STATIC_DIR = Path(__file__).parent / "static"
 # App factory
 # ---------------------------------------------------------------------------
 
+_DEFAULT_COOKIES_PATH = str(Path.home() / ".renderdiff" / "google-cookies.json")
+
+
 def create_app(cookies_file: str | None = None) -> FastAPI:
     app = FastAPI(title="renderdiff", docs_url="/docs")
-    app.state.cookies_file = cookies_file
+    # Use a default cookies path so the CAPTCHA warm-up flow always works
+    app.state.cookies_file = cookies_file or _DEFAULT_COOKIES_PATH
 
     # -- Serve SPA ----------------------------------------------------------
 
