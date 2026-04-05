@@ -40,6 +40,7 @@ CLOUDFLARE_MARKERS = [
 FONT_EXTENSIONS = ("woff", "woff2", "ttf", "otf", "eot")
 
 # Indexation checker
+DEFAULT_INDEX_CONCURRENCY = 3
 DEFAULT_INDEX_DELAY_S = 5.0
 GOOGLE_SEARCH_URL = "https://www.google.com/search"
 INDEX_NAVIGATION_TIMEOUT_MS = 15_000

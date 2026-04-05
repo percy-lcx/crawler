@@ -61,6 +61,9 @@ def index(
     delay: float = typer.Option(
         5.0, "--delay", "-d", help="Delay between Google queries in seconds"
     ),
+    concurrency: int = typer.Option(
+        3, "--concurrency", "-c", help="Max concurrent Google index checks"
+    ),
     limit: Optional[int] = typer.Option(
         None, "--limit", "-l", help="Max number of URLs to check"
     ),
@@ -91,6 +94,7 @@ def index(
                 input_file=input_file,
                 sitemap=sitemap,
                 delay=delay,
+                concurrency=concurrency,
                 limit=limit,
                 output=output,
                 html_report=html_report,
@@ -107,6 +111,7 @@ async def _index_async(
     input_file: str | None,
     sitemap: str | None,
     delay: float,
+    concurrency: int,
     limit: int | None,
     output: str | None,
     html_report: str | None,
@@ -123,7 +128,7 @@ async def _index_async(
         typer.echo("No URLs to process.", err=True)
         raise typer.Exit(1)
 
-    typer.echo(f"Checking indexation for {len(urls)} URL(s) (delay={delay}s)...\n")
+    typer.echo(f"Checking indexation for {len(urls)} URL(s) (concurrency={concurrency}, delay={delay}s)...\n")
 
     screenshot_dir = None
     if html_report:
@@ -134,7 +139,7 @@ async def _index_async(
     from .indexation import check_indexation
 
     cookies_path = cookies or _DEFAULT_COOKIES_PATH
-    report = await check_indexation(urls, delay=delay, screenshot_dir=screenshot_dir, cookies_file=cookies_path)
+    report = await check_indexation(urls, delay=delay, concurrency=concurrency, screenshot_dir=screenshot_dir, cookies_file=cookies_path)
 
     print_index_summary(report)
 
